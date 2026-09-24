@@ -1,0 +1,48 @@
+### Probar la API sin salir de VS Code (extension REST Client: humao.rest-client)
+### Haz clic en "Send Request" sobre cada bloque.
+
+@host = http://127.0.0.1:8000
+
+### 1. Estado del servicio
+GET {{host}}/api/salud
+
+### 2. Iniciar sesion (guarda el token automaticamente)
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=admin&password=admin123
+
+###
+@token = {{login.response.body.access_token}}
+
+### 3. Catalogo de productos
+GET {{host}}/api/productos
+Authorization: Bearer {{token}}
+
+### 4. Equipos disponibles en bodega
+GET {{host}}/api/inventario/imei?estado=disponible
+Authorization: Bearer {{token}}
+
+### 5. Registrar una venta
+# Reemplaza el IMEI por uno que aparezca en la peticion anterior.
+POST {{host}}/api/ventas
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "cliente_id": 1,
+  "metodo_pago": "efectivo",
+  "items": [
+    { "producto_id": 1, "cantidad": 1, "imei": "REEMPLAZAR_POR_UN_IMEI_DISPONIBLE" },
+    { "producto_id": 5, "cantidad": 2, "descuento": "5000" }
+  ]
+}
+
+### 6. Indicadores del dashboard
+GET {{host}}/api/reportes/dashboard
+Authorization: Bearer {{token}}
+
+### 7. Garantias vigentes
+GET {{host}}/api/garantias?estado=vigente
+Authorization: Bearer {{token}}

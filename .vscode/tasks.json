@@ -1,0 +1,83 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "0 - Diagnostico: verificar Python y Node",
+      "type": "shell",
+      "command": "Write-Host '--- Python ---'; python --version; Write-Host '--- Node ---'; node --version; npm --version; Write-Host '--- Entorno virtual ---'; if (Test-Path '${workspaceFolder}/backend/.venv/Scripts/python.exe') { Write-Host 'OK: el entorno virtual existe' } else { Write-Host 'FALTA: ejecuta la tarea 1' }; Write-Host '--- Dependencias del frontend ---'; if (Test-Path '${workspaceFolder}/frontend/node_modules') { Write-Host 'OK: node_modules existe' } else { Write-Host 'FALTA: ejecuta la tarea 4' }",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "1 - Backend: crear entorno e instalar dependencias",
+      "type": "shell",
+      "command": "python -m venv .venv; & '${workspaceFolder}/backend/.venv/Scripts/python.exe' -m pip install --upgrade pip; & '${workspaceFolder}/backend/.venv/Scripts/python.exe' -m pip install -r requirements.txt",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "2 - Backend: crear base de datos y datos de prueba",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/backend/.venv/Scripts/python.exe' -m app.seed",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "3 - Backend: iniciar API",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/backend/.venv/Scripts/python.exe' -m uvicorn app.main:app --reload --port 8000",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "servidores" }
+    },
+    {
+      "label": "4 - Frontend: instalar dependencias",
+      "type": "shell",
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "5 - Frontend: iniciar interfaz",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "servidores" }
+    },
+    {
+      "label": "INSTALACION COMPLETA (primera vez)",
+      "dependsOn": [
+        "1 - Backend: crear entorno e instalar dependencias",
+        "2 - Backend: crear base de datos y datos de prueba",
+        "4 - Frontend: instalar dependencias"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "INICIAR TODO (API + interfaz)",
+      "dependsOn": [
+        "3 - Backend: iniciar API",
+        "5 - Frontend: iniciar interfaz"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Pruebas: ejecutar prueba de extremo a extremo",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/backend/.venv/Scripts/python.exe' -m tests.test_flujo",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}
