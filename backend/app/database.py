@@ -1,31 +1,14 @@
-"""Conexion a la base de datos. Soporta SQLite (demo) y PostgreSQL (entrega)."""
-import warnings
+"""Conexion a PostgreSQL.
 
+El esquema NO lo crea la aplicacion: lo crean los scripts de database/. La aplicacion
+solo se conecta, y la prueba de consistencia verifica que ambos coincidan.
+"""
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
 
-# SQLite no maneja Decimal nativamente; SQLAlchemy lo convierte y avisa.
-warnings.filterwarnings("ignore", message=r".*does \*not\* support Decimal objects natively.*")
-
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-
-engine = create_engine(
-    settings.database_url,
-    connect_args=connect_args,
-    pool_pre_ping=True,
-    future=True,
-)
-
-if settings.database_url.startswith("sqlite"):
-    @event.listens_for(engine, "connect")
-    def _activar_foreign_keys(dbapi_connection, connection_record):
-        """SQLite ignora las FK salvo que se activen por conexion."""
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
+engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
@@ -39,3 +22,12 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def marcar_usuario(db: Session, usuario_id: int | None) -> None:
+    """Deja el usuario en la sesion de PostgreSQL para que el trigger de auditoria
+    registre quien hizo cada cambio."""
+    db.execute(
+        __import__("sqlalchemy").text("SELECT set_config('pos.usuario_id', :v, true)"),
+        {"v": str(usuario_id or "")},
+    )

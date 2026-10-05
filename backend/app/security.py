@@ -28,10 +28,10 @@ def verify_password(password: str, almacenado: str) -> bool:
         return False
 
 
-def crear_access_token(subject: str, rol: str) -> str:
+def crear_access_token(usuario_id: int, username: str, rol: str) -> str:
     expira = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": subject, "rol": rol, "exp": expira}
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    return jwt.encode({"sub": str(usuario_id), "username": username, "rol": rol, "exp": expira},
+                      settings.secret_key, algorithm=settings.algorithm)
 
 
 def decodificar_token(token: str) -> dict | None:

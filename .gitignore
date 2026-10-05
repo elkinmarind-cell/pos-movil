@@ -1,11 +1,33 @@
+# --- Python -----------------------------------------------------------------
 __pycache__/
 *.py[cod]
-*.db
-.env
 .venv/
 venv/
+
+# --- Node y compilacion de la interfaz web ----------------------------------
 node_modules/
 dist/
 .vite/
-.DS_Store
 
+# --- Empaquetado del ejecutable (PyInstaller) -------------------------------
+build/
+*.spec
+
+# --- Proyecto Kotlin / Gradle -----------------------------------------------
+.gradle/
+.idea/
+*.iml
+out/
+local.properties
+
+# --- Secretos: nunca se suben -----------------------------------------------
+# La plantilla .env.example si se versiona; el .env con la clave real, no.
+.env
+*.db
+
+# --- Archivos de trabajo que no son del proyecto ----------------------------
+_reemplazados/
+diagnostico.txt
+salida_servidor.txt
+.DS_Store
+Thumbs.db

@@ -1,0 +1,990 @@
+// ===========================================================================
+// Sistema POS para la gestion y venta de dispositivos moviles
+// Diagrama entidad-relacion para dbdiagram.io
+//
+// Generado desde el modelo general del proyecto. No editar a mano: se
+// regenera con  python gen_dbml.py
+//
+// Como usarlo:  entrar a https://dbdiagram.io/d  -> borrar el ejemplo ->
+// pegar todo este archivo.
+// ===========================================================================
+
+Project pos_movil {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Sistema POS para dispositivos moviles — CUN
+    Elkin Santiago Marin Duarte y Juan David Zabala Plata
+
+    37 tablas en 11 modulos, 59 claves foraneas
+    y 22 tipos enumerados.
+
+    Dos estrategias de inventario conviven en el modelo:
+      · equipos_imei  -> una fila por unidad fisica, identificada por IMEI
+      · productos.stock_actual -> cantidad, para los accesorios
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Tipos enumerados
+// ---------------------------------------------------------------------------
+
+Enum accion_auditoria {
+  INSERT
+  UPDATE
+  DELETE
+}
+
+Enum tipo_descuento {
+  PORCENTAJE
+  VALOR_FIJO
+}
+
+Enum estado_orden_compra {
+  BORRADOR
+  ENVIADA
+  RECIBIDA_PARCIAL
+  RECIBIDA
+  ANULADA
+}
+
+Enum estado_imei {
+  DISPONIBLE
+  APARTADO
+  VENDIDO
+  DEVUELTO
+  EN_SERVICIO
+  DADO_DE_BAJA
+}
+
+Enum tipo_movimiento {
+  ENTRADA
+  SALIDA
+  AJUSTE
+  DEVOLUCION
+}
+
+Enum tipo_documento {
+  CC
+  CE
+  TI
+  NIT
+  PASAPORTE
+}
+
+Enum estado_venta {
+  COMPLETADA
+  ANULADA
+}
+
+Enum metodo_pago {
+  EFECTIVO
+  DEBITO
+  CREDITO
+  TRANSFERENCIA
+  NEQUI
+  DAVIPLATA
+}
+
+Enum estado_apartado {
+  VIGENTE
+  COMPLETADO
+  VENCIDO
+  CANCELADO
+}
+
+Enum estado_turno {
+  ABIERTO
+  CERRADO
+}
+
+Enum tipo_mov_caja {
+  INGRESO
+  EGRESO
+}
+
+Enum estado_dian {
+  PENDIENTE
+  ACEPTADA
+  RECHAZADA
+}
+
+Enum tipo_reembolso {
+  EFECTIVO
+  CAMBIO
+  NOTA_CREDITO
+}
+
+Enum estado_garantia {
+  VIGENTE
+  VENCIDA
+  EN_RECLAMACION
+  ATENDIDA
+}
+
+Enum estado_servicio {
+  RECIBIDO
+  DIAGNOSTICO
+  REPARACION
+  LISTO
+  ENTREGADO
+}
+
+Enum modalidad_plan {
+  PREPAGO
+  POSPAGO
+}
+
+Enum tipo_activacion {
+  NUEVA
+  PORTABILIDAD
+  REPOSICION
+}
+
+Enum estado_activacion {
+  PENDIENTE
+  ACTIVA
+  RECHAZADA
+}
+
+Enum tipo_dispositivo {
+  LECTOR_BARRAS
+  LECTOR_RFID
+  ARCO_RFID
+  SENSOR_PUERTA
+  IMPRESORA_TERMICA
+}
+
+Enum protocolo_iot {
+  WIFI
+  BLE
+  ZIGBEE
+  MQTT
+}
+
+Enum tipo_alerta {
+  SALIDA_NO_AUTORIZADA
+  STOCK_BAJO
+  DISPOSITIVO_OFFLINE
+  GARANTIA_POR_VENCER
+}
+
+Enum severidad {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+// ---------------------------------------------------------------------------
+// Seguridad y auditoria
+// ---------------------------------------------------------------------------
+
+Table roles [headercolor: #64748B] {
+  id serial [pk, not null]
+  nombre varchar(40) [not null, unique]
+  descripcion varchar(200) [null]
+
+  Note: '''
+    Seguridad y auditoria
+  '''
+}
+
+Table permisos [headercolor: #64748B] {
+  id serial [pk, not null]
+  codigo varchar(60) [not null, unique]
+  modulo varchar(40) [not null]
+  descripcion varchar(200) [null]
+
+  Note: '''
+    Seguridad y auditoria
+  '''
+}
+
+Table rol_permisos [headercolor: #64748B] {
+  rol_id integer [not null, note: 'FK a roles']
+  permiso_id integer [not null, note: 'FK a permisos']
+
+  indexes {
+    (rol_id, permiso_id) [pk]
+  }
+
+  Note: '''
+    Seguridad y auditoria
+  '''
+}
+
+Table usuarios [headercolor: #64748B] {
+  id serial [pk, not null]
+  rol_id integer [not null, note: 'FK a roles']
+  username varchar(50) [not null, unique]
+  nombre_completo varchar(120) [not null]
+  email varchar(120) [not null, unique]
+  password_hash varchar(255) [not null]
+  activo boolean [not null, default: true]
+  ultimo_acceso timestamptz [null]
+  creado_en timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Seguridad y auditoria
+    Operadores del sistema. La contrasena se guarda como hash PBKDF2-SHA256.
+  '''
+}
+
+Table auditoria [headercolor: #64748B] {
+  id bigserial [pk, not null]
+  usuario_id integer [null, note: 'FK a usuarios']
+  tabla varchar(60) [not null]
+  registro_id bigint [not null]
+  accion accion_auditoria [not null]
+  valores_anteriores jsonb [null]
+  valores_nuevos jsonb [null]
+  direccion_ip inet [null]
+  fecha timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Seguridad y auditoria
+    Bitacora append-only de cambios: quien, que, cuando y desde que IP.
+    solo INSERT: registro inmutable
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Catalogo
+// ---------------------------------------------------------------------------
+
+Table categorias [headercolor: #2563EB] {
+  id serial [pk, not null]
+  categoria_padre_id integer [null, note: 'FK a categorias']
+  nombre varchar(80) [not null, unique]
+  descripcion varchar(255) [null]
+
+  Note: '''
+    Catalogo
+    CHECK categoria_padre_id IS NULL OR categoria_padre_id <> id
+  '''
+}
+
+Table marcas [headercolor: #2563EB] {
+  id serial [pk, not null]
+  nombre varchar(80) [not null, unique]
+  pais_origen varchar(80) [null]
+
+  Note: '''
+    Catalogo
+  '''
+}
+
+Table productos [headercolor: #2563EB] {
+  id serial [pk, not null]
+  categoria_id integer [not null, note: 'FK a categorias']
+  marca_id integer [null, note: 'FK a marcas']
+  sku varchar(40) [not null, unique]
+  codigo_barras varchar(20) [null, unique]
+  nombre varchar(150) [not null]
+  descripcion text [null]
+  precio_costo numeric(14,2) [not null, default: 0]
+  precio_venta numeric(14,2) [not null, default: 0]
+  iva_porcentaje numeric(5,2) [not null, default: 19]
+  requiere_imei boolean [not null, default: false]
+  meses_garantia smallint [not null, default: 12]
+  stock_actual integer [not null, default: 0]
+  stock_minimo integer [not null, default: 5]
+  activo boolean [not null, default: true]
+
+  Note: '''
+    Catalogo
+    Modelo comercial. Si requiere_imei el stock se lleva por serie en equipos_imei.
+    requiere_imei => stock_actual = 0
+    precio_venta >= precio_costo
+    CHECK precio_costo >= 0 AND precio_venta >= 0
+    CHECK iva_porcentaje BETWEEN 0 AND 100
+    CHECK stock_actual >= 0 AND stock_minimo >= 0
+    CHECK NOT requiere_imei OR stock_actual = 0
+    CHECK precio_venta >= precio_costo
+  '''
+}
+
+Table promociones [headercolor: #2563EB] {
+  id serial [pk, not null]
+  nombre varchar(120) [not null]
+  tipo_descuento tipo_descuento [not null]
+  valor numeric(14,2) [not null, default: 0]
+  fecha_inicio date [not null]
+  fecha_fin date [not null]
+  activa boolean [not null, default: true]
+
+  Note: '''
+    Catalogo
+    fecha_fin >= fecha_inicio
+    CHECK fecha_fin >= fecha_inicio
+    CHECK valor > 0
+  '''
+}
+
+Table promocion_productos [headercolor: #2563EB] {
+  promocion_id integer [not null, note: 'FK a promociones']
+  producto_id integer [not null, note: 'FK a productos']
+
+  indexes {
+    (promocion_id, producto_id) [pk]
+  }
+
+  Note: '''
+    Catalogo
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Compras
+// ---------------------------------------------------------------------------
+
+Table proveedores [headercolor: #EA580C] {
+  id serial [pk, not null]
+  nit varchar(20) [not null, unique]
+  razon_social varchar(150) [not null]
+  contacto varchar(120) [null]
+  telefono varchar(30) [null]
+  email varchar(120) [null]
+  activo boolean [not null, default: true]
+
+  Note: '''
+    Compras
+  '''
+}
+
+Table ordenes_compra [headercolor: #EA580C] {
+  id serial [pk, not null]
+  proveedor_id integer [not null, note: 'FK a proveedores']
+  usuario_id integer [not null, note: 'FK a usuarios']
+  numero varchar(20) [not null, unique]
+  fecha date [not null]
+  fecha_recepcion date [null]
+  estado estado_orden_compra [not null, default: 'BORRADOR']
+  total numeric(14,2) [not null, default: 0]
+
+  Note: '''
+    Compras
+  '''
+}
+
+Table orden_compra_detalles [headercolor: #EA580C] {
+  id serial [pk, not null]
+  orden_compra_id integer [not null, note: 'FK a ordenes_compra']
+  producto_id integer [not null, note: 'FK a productos']
+  cantidad_pedida integer [not null, default: 0]
+  cantidad_recibida integer [not null, default: 0]
+  costo_unitario numeric(14,2) [not null, default: 0]
+
+  Note: '''
+    Compras
+    cantidad_recibida <= cantidad_pedida
+    CHECK cantidad_pedida > 0 AND cantidad_recibida >= 0
+    CHECK cantidad_recibida <= cantidad_pedida
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Inventario serializado
+// ---------------------------------------------------------------------------
+
+Table equipos_imei [headercolor: #0D9488] {
+  id serial [pk, not null]
+  producto_id integer [not null, note: 'FK a productos']
+  orden_compra_detalle_id integer [null, note: 'FK a orden_compra_detalles']
+  imei varchar(15) [not null, unique]
+  imei2 varchar(15) [null]
+  codigo_rfid varchar(24) [null, unique]
+  color varchar(40) [null]
+  almacenamiento_gb smallint [null]
+  costo numeric(14,2) [not null, default: 0]
+  estado estado_imei [not null, default: 'DISPONIBLE']
+  fecha_ingreso timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Inventario serializado
+    Unidad fisica trazable. En Colombia el IMEI se reporta a la base positiva de la CRC.
+    imei valido por algoritmo de Luhn
+    CHECK imei ~ '^[0-9]{15}$'
+    CHECK imei2 IS NULL OR imei2 ~ '^[0-9]{15}$'
+  '''
+}
+
+Table movimientos_inventario [headercolor: #0D9488] {
+  id bigserial [pk, not null]
+  producto_id integer [not null, note: 'FK a productos']
+  equipo_imei_id integer [null, note: 'FK a equipos_imei']
+  usuario_id integer [not null, note: 'FK a usuarios']
+  tipo tipo_movimiento [not null]
+  cantidad integer [not null, default: 1]
+  stock_resultante integer [not null, default: 0]
+  motivo varchar(255) [null]
+  referencia varchar(60) [null]
+  fecha timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Inventario serializado
+    Kardex append-only: soporta la auditoria de existencias.
+    kardex: solo INSERT
+    CHECK cantidad > 0
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------------
+
+Table clientes [headercolor: #7C3AED] {
+  id serial [pk, not null]
+  tipo_documento tipo_documento [not null, default: 'CC']
+  numero_documento varchar(20) [not null]
+  nombres varchar(80) [not null]
+  apellidos varchar(80) [null]
+  telefono varchar(30) [null]
+  email varchar(120) [null]
+  direccion varchar(180) [null]
+  ciudad varchar(80) [null]
+  autoriza_datos boolean [not null, default: false]
+  activo boolean [not null, default: true]
+  creado_en timestamptz [not null, default: `NOW()`]
+
+  indexes {
+    (tipo_documento, numero_documento) [unique]
+  }
+
+  Note: '''
+    Clientes
+    autoriza_datos cubre el tratamiento de datos de la Ley 1581 de 2012.
+    unique(tipo_documento, numero_documento)
+    autoriza_datos: Ley 1581 de 2012
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Ventas
+// ---------------------------------------------------------------------------
+
+Table ventas [headercolor: #16A34A] {
+  id serial [pk, not null]
+  cliente_id integer [null, note: 'FK a clientes']
+  usuario_id integer [not null, note: 'FK a usuarios']
+  turno_caja_id integer [not null, note: 'FK a turnos_caja']
+  numero varchar(20) [not null, unique]
+  fecha timestamptz [not null, default: `NOW()`]
+  subtotal numeric(14,2) [not null, default: 0]
+  descuento_total numeric(14,2) [not null, default: 0]
+  iva_total numeric(14,2) [not null, default: 0]
+  total numeric(14,2) [not null, default: 0]
+  estado estado_venta [not null, default: 'COMPLETADA']
+  observaciones text [null]
+  motivo_anulacion varchar(255) [null]
+
+  Note: '''
+    Ventas
+    total = subtotal + iva_total
+    estado ANULADA exige motivo_anulacion
+    CHECK total = subtotal + iva_total
+    CHECK estado <> 'ANULADA' OR motivo_anulacion IS NOT NULL
+    CHECK subtotal >= 0 AND iva_total >= 0 AND descuento_total >= 0
+  '''
+}
+
+Table venta_detalles [headercolor: #16A34A] {
+  id serial [pk, not null]
+  venta_id integer [not null, note: 'FK a ventas']
+  producto_id integer [not null, note: 'FK a productos']
+  equipo_imei_id integer [null, note: 'FK a equipos_imei']
+  promocion_id integer [null, note: 'FK a promociones']
+  cantidad integer [not null, default: 1]
+  precio_unitario numeric(14,2) [not null, default: 0]
+  descuento numeric(14,2) [not null, default: 0]
+  iva_porcentaje numeric(5,2) [not null, default: 19]
+  iva_valor numeric(14,2) [not null, default: 0]
+  total_linea numeric(14,2) [not null, default: 0]
+
+  indexes {
+    (venta_id, equipo_imei_id) [unique]
+  }
+
+  Note: '''
+    Ventas
+    equipo_imei_id no nulo => cantidad = 1
+    CHECK cantidad > 0
+    CHECK equipo_imei_id IS NULL OR cantidad = 1
+    CHECK total_linea = (precio_unitario * cantidad - descuento) + iva_valor
+    CHECK descuento >= 0
+  '''
+}
+
+Table pagos [headercolor: #16A34A] {
+  id serial [pk, not null]
+  venta_id integer [null, note: 'FK a ventas']
+  apartado_id integer [null, note: 'FK a apartados']
+  turno_caja_id integer [not null, note: 'FK a turnos_caja']
+  metodo metodo_pago [not null]
+  valor numeric(14,2) [not null, default: 0]
+  referencia varchar(60) [null]
+  fecha timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Ventas
+    Un pago pertenece a una venta o al abono de un apartado, nunca a los dos.
+    exactamente uno: venta_id o apartado_id
+    CHECK (venta_id IS NOT NULL)::int + (apartado_id IS NOT NULL)::int = 1
+    CHECK valor > 0
+  '''
+}
+
+Table apartados [headercolor: #16A34A] {
+  id serial [pk, not null]
+  cliente_id integer [not null, note: 'FK a clientes']
+  equipo_imei_id integer [not null, note: 'FK a equipos_imei']
+  venta_id integer [null, unique, note: 'FK a ventas']
+  fecha timestamptz [not null, default: `NOW()`]
+  fecha_limite date [not null]
+  valor_total numeric(14,2) [not null, default: 0]
+  saldo_pendiente numeric(14,2) [not null, default: 0]
+  estado estado_apartado [not null, default: 'VIGENTE']
+
+  Note: '''
+    Ventas
+    0 <= saldo_pendiente <= valor_total
+    CHECK saldo_pendiente >= 0 AND saldo_pendiente <= valor_total
+    CHECK valor_total > 0
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Caja
+// ---------------------------------------------------------------------------
+
+Table cajas [headercolor: #CA8A04] {
+  id serial [pk, not null]
+  nombre varchar(40) [not null, unique]
+  ubicacion varchar(80) [null]
+  activa boolean [not null, default: true]
+
+  Note: '''
+    Caja
+  '''
+}
+
+Table turnos_caja [headercolor: #CA8A04] {
+  id serial [pk, not null]
+  caja_id integer [not null, note: 'FK a cajas']
+  usuario_id integer [not null, note: 'FK a usuarios']
+  apertura timestamptz [not null, default: `NOW()`]
+  cierre timestamptz [null]
+  base_inicial numeric(14,2) [not null, default: 0]
+  efectivo_esperado numeric(14,2) [null]
+  efectivo_contado numeric(14,2) [null]
+  diferencia numeric(14,2) [null]
+  estado estado_turno [not null, default: 'ABIERTO']
+
+  Note: '''
+    Caja
+    Apertura, cierre y arqueo por caja y cajero.
+    un solo turno ABIERTO por caja
+    CHECK cierre IS NULL OR cierre >= apertura
+    CHECK base_inicial >= 0
+  '''
+}
+
+Table movimientos_caja [headercolor: #CA8A04] {
+  id serial [pk, not null]
+  turno_caja_id integer [not null, note: 'FK a turnos_caja']
+  tipo tipo_mov_caja [not null]
+  concepto varchar(150) [not null]
+  valor numeric(14,2) [not null, default: 0]
+  fecha timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Caja
+    CHECK valor > 0
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Facturacion electronica DIAN
+// ---------------------------------------------------------------------------
+
+Table resoluciones_dian [headercolor: #DC2626] {
+  id serial [pk, not null]
+  numero_resolucion varchar(30) [not null, unique]
+  prefijo varchar(10) [not null]
+  rango_desde integer [not null]
+  rango_hasta integer [not null]
+  consecutivo_actual integer [not null, default: 0]
+  vigencia_desde date [not null]
+  vigencia_hasta date [not null]
+  activa boolean [not null, default: true]
+
+  Note: '''
+    Facturacion electronica DIAN
+    Resolucion de numeracion autorizada por la DIAN.
+    rango_desde <= consecutivo_actual <= rango_hasta
+    CHECK rango_desde <= rango_hasta
+    CHECK consecutivo_actual BETWEEN rango_desde - 1 AND rango_hasta
+    CHECK vigencia_hasta > vigencia_desde
+  '''
+}
+
+Table facturas_electronicas [headercolor: #DC2626] {
+  id serial [pk, not null]
+  venta_id integer [not null, unique, note: 'FK a ventas']
+  resolucion_id integer [not null, note: 'FK a resoluciones_dian']
+  numero varchar(20) [not null, unique]
+  cufe varchar(96) [not null, unique]
+  fecha_emision timestamptz [not null, default: `NOW()`]
+  xml_firmado text [not null]
+  estado_dian estado_dian [not null, default: 'PENDIENTE']
+  respuesta_dian jsonb [null]
+
+  Note: '''
+    Facturacion electronica DIAN
+    Factura electronica con CUFE y respuesta de la DIAN.
+  '''
+}
+
+Table notas_credito [headercolor: #DC2626] {
+  id serial [pk, not null]
+  factura_id integer [not null, note: 'FK a facturas_electronicas']
+  devolucion_id integer [not null, unique, note: 'FK a devoluciones']
+  numero varchar(20) [not null, unique]
+  cude varchar(96) [not null, unique]
+  valor numeric(14,2) [not null, default: 0]
+  fecha_emision timestamptz [not null, default: `NOW()`]
+  estado_dian estado_dian [not null, default: 'PENDIENTE']
+
+  Note: '''
+    Facturacion electronica DIAN
+    CHECK valor > 0
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Posventa y servicio tecnico
+// ---------------------------------------------------------------------------
+
+Table devoluciones [headercolor: #DB2777] {
+  id serial [pk, not null]
+  venta_id integer [not null, note: 'FK a ventas']
+  usuario_id integer [not null, note: 'FK a usuarios']
+  fecha timestamptz [not null, default: `NOW()`]
+  motivo varchar(255) [not null]
+  tipo_reembolso tipo_reembolso [not null]
+  total numeric(14,2) [not null, default: 0]
+
+  Note: '''
+    Posventa y servicio tecnico
+    CHECK total >= 0
+  '''
+}
+
+Table devolucion_detalles [headercolor: #DB2777] {
+  id serial [pk, not null]
+  devolucion_id integer [not null, note: 'FK a devoluciones']
+  venta_detalle_id integer [not null, note: 'FK a venta_detalles']
+  cantidad integer [not null, default: 0]
+  valor numeric(14,2) [not null, default: 0]
+  reingresa_inventario boolean [not null, default: true]
+
+  Note: '''
+    Posventa y servicio tecnico
+    CHECK cantidad > 0
+  '''
+}
+
+Table garantias [headercolor: #DB2777] {
+  id serial [pk, not null]
+  venta_detalle_id integer [not null, unique, note: 'FK a venta_detalles']
+  fecha_inicio date [not null]
+  fecha_fin date [not null]
+  meses smallint [not null, default: 12]
+  estado estado_garantia [not null, default: 'VIGENTE']
+
+  Note: '''
+    Posventa y servicio tecnico
+    Garantia legal del Estatuto del Consumidor (Ley 1480 de 2011).
+    fecha_fin > fecha_inicio (Ley 1480)
+    CHECK fecha_fin > fecha_inicio
+    CHECK meses > 0
+  '''
+}
+
+Table ordenes_servicio [headercolor: #DB2777] {
+  id serial [pk, not null]
+  cliente_id integer [not null, note: 'FK a clientes']
+  equipo_imei_id integer [null, note: 'FK a equipos_imei']
+  garantia_id integer [null, note: 'FK a garantias']
+  tecnico_id integer [null, note: 'FK a usuarios']
+  numero varchar(20) [not null, unique]
+  equipo_externo varchar(150) [null]
+  falla_reportada text [not null]
+  diagnostico text [null]
+  costo_mano_obra numeric(14,2) [not null, default: 0]
+  estado estado_servicio [not null, default: 'RECIBIDO']
+  fecha_ingreso timestamptz [not null, default: `NOW()`]
+  fecha_entrega timestamptz [null]
+
+  Note: '''
+    Posventa y servicio tecnico
+    Servicio tecnico; si viene de garantia se enlaza con garantia_id.
+    equipo_imei_id o equipo_externo (uno de los dos)
+    CHECK equipo_imei_id IS NOT NULL OR equipo_externo IS NOT NULL
+    CHECK fecha_entrega IS NULL OR fecha_entrega >= fecha_ingreso
+    CHECK costo_mano_obra >= 0
+  '''
+}
+
+Table orden_servicio_repuestos [headercolor: #DB2777] {
+  id serial [pk, not null]
+  orden_servicio_id integer [not null, note: 'FK a ordenes_servicio']
+  producto_id integer [not null, note: 'FK a productos']
+  cantidad integer [not null, default: 0]
+  precio_unitario numeric(14,2) [not null, default: 0]
+
+  Note: '''
+    Posventa y servicio tecnico
+    CHECK cantidad > 0
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Activacion de lineas
+// ---------------------------------------------------------------------------
+
+Table operadores [headercolor: #4F46E5] {
+  id serial [pk, not null]
+  nombre varchar(40) [not null, unique]
+  nit varchar(20) [not null, unique]
+  activo boolean [not null, default: true]
+
+  Note: '''
+    Activacion de lineas
+  '''
+}
+
+Table planes [headercolor: #4F46E5] {
+  id serial [pk, not null]
+  operador_id integer [not null, note: 'FK a operadores']
+  nombre varchar(80) [not null]
+  modalidad modalidad_plan [not null]
+  cargo_mensual numeric(14,2) [not null, default: 0]
+  datos_gb numeric(6,1) [null]
+  comision numeric(14,2) [not null, default: 0]
+  activo boolean [not null, default: true]
+
+  Note: '''
+    Activacion de lineas
+    CHECK cargo_mensual >= 0 AND comision >= 0
+  '''
+}
+
+Table activaciones_linea [headercolor: #4F46E5] {
+  id serial [pk, not null]
+  plan_id integer [not null, note: 'FK a planes']
+  cliente_id integer [not null, note: 'FK a clientes']
+  venta_id integer [null, note: 'FK a ventas']
+  numero_linea varchar(10) [not null]
+  iccid_sim varchar(22) [not null, unique]
+  tipo tipo_activacion [not null]
+  estado estado_activacion [not null, default: 'PENDIENTE']
+  fecha timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    Activacion de lineas
+    CHECK numero_linea ~ '^3[0-9]{9}$'
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// IoT
+// ---------------------------------------------------------------------------
+
+Table dispositivos_iot [headercolor: #0891B2] {
+  id serial [pk, not null]
+  caja_id integer [null, note: 'FK a cajas']
+  nombre varchar(80) [not null]
+  tipo tipo_dispositivo [not null]
+  direccion_mac macaddr [not null, unique]
+  direccion_ip inet [null]
+  protocolo protocolo_iot [not null]
+  ubicacion varchar(80) [not null]
+  activo boolean [not null, default: true]
+  ultima_conexion timestamptz [null]
+
+  Note: '''
+    IoT
+    Lectores de codigo de barras, arcos RFID y sensores de la tienda.
+  '''
+}
+
+Table eventos_iot [headercolor: #0891B2] {
+  id bigserial [pk, not null]
+  dispositivo_id integer [not null, note: 'FK a dispositivos_iot']
+  equipo_imei_id integer [null, note: 'FK a equipos_imei']
+  tipo_evento varchar(40) [not null]
+  payload jsonb [not null]
+  fecha timestamptz [not null, default: `NOW()`]
+
+  Note: '''
+    IoT
+    Telemetria cruda de los dispositivos.
+  '''
+}
+
+Table alertas [headercolor: #0891B2] {
+  id serial [pk, not null]
+  evento_iot_id bigint [null, unique, note: 'FK a eventos_iot']
+  producto_id integer [null, note: 'FK a productos']
+  atendida_por integer [null, note: 'FK a usuarios']
+  tipo tipo_alerta [not null]
+  severidad severidad [not null, default: 'MEDIA']
+  mensaje varchar(255) [not null]
+  fecha timestamptz [not null, default: `NOW()`]
+  fecha_atencion timestamptz [null]
+
+  Note: '''
+    IoT
+    Alertas operativas derivadas de eventos IoT o de reglas de negocio.
+  '''
+}
+
+// ---------------------------------------------------------------------------
+// Relaciones
+//   >  muchos a uno        -  uno a uno
+// ---------------------------------------------------------------------------
+
+Ref: rol_permisos.rol_id > roles.id [delete: cascade]
+Ref: rol_permisos.permiso_id > permisos.id [delete: restrict]
+Ref: usuarios.rol_id > roles.id [delete: restrict]
+Ref: auditoria.usuario_id > usuarios.id [delete: set null]
+Ref: categorias.categoria_padre_id > categorias.id [delete: set null]
+Ref: productos.categoria_id > categorias.id [delete: restrict]
+Ref: productos.marca_id > marcas.id [delete: set null]
+Ref: promocion_productos.promocion_id > promociones.id [delete: cascade]
+Ref: promocion_productos.producto_id > productos.id [delete: restrict]
+Ref: ordenes_compra.proveedor_id > proveedores.id [delete: restrict]
+Ref: ordenes_compra.usuario_id > usuarios.id [delete: restrict]
+Ref: orden_compra_detalles.orden_compra_id > ordenes_compra.id [delete: cascade]
+Ref: orden_compra_detalles.producto_id > productos.id [delete: restrict]
+Ref: equipos_imei.producto_id > productos.id [delete: restrict]
+Ref: equipos_imei.orden_compra_detalle_id > orden_compra_detalles.id [delete: set null]
+Ref: movimientos_inventario.producto_id > productos.id [delete: restrict]
+Ref: movimientos_inventario.equipo_imei_id > equipos_imei.id [delete: set null]
+Ref: movimientos_inventario.usuario_id > usuarios.id [delete: restrict]
+Ref: turnos_caja.caja_id > cajas.id [delete: restrict]
+Ref: turnos_caja.usuario_id > usuarios.id [delete: restrict]
+Ref: movimientos_caja.turno_caja_id > turnos_caja.id [delete: cascade]
+Ref: ventas.cliente_id > clientes.id [delete: set null]
+Ref: ventas.usuario_id > usuarios.id [delete: restrict]
+Ref: ventas.turno_caja_id > turnos_caja.id [delete: restrict]
+Ref: venta_detalles.venta_id > ventas.id [delete: cascade]
+Ref: venta_detalles.producto_id > productos.id [delete: restrict]
+Ref: venta_detalles.equipo_imei_id > equipos_imei.id [delete: set null]
+Ref: venta_detalles.promocion_id > promociones.id [delete: set null]
+Ref: pagos.venta_id > ventas.id [delete: set null]
+Ref: pagos.apartado_id > apartados.id [delete: set null]
+Ref: pagos.turno_caja_id > turnos_caja.id [delete: restrict]
+Ref: apartados.cliente_id > clientes.id [delete: restrict]
+Ref: apartados.equipo_imei_id > equipos_imei.id [delete: restrict]
+Ref: apartados.venta_id - ventas.id [delete: set null]
+Ref: facturas_electronicas.venta_id - ventas.id [delete: restrict]
+Ref: facturas_electronicas.resolucion_id > resoluciones_dian.id [delete: restrict]
+Ref: notas_credito.factura_id > facturas_electronicas.id [delete: restrict]
+Ref: notas_credito.devolucion_id - devoluciones.id [delete: restrict]
+Ref: devoluciones.venta_id > ventas.id [delete: restrict]
+Ref: devoluciones.usuario_id > usuarios.id [delete: restrict]
+Ref: devolucion_detalles.devolucion_id > devoluciones.id [delete: cascade]
+Ref: devolucion_detalles.venta_detalle_id > venta_detalles.id [delete: restrict]
+Ref: garantias.venta_detalle_id - venta_detalles.id [delete: restrict]
+Ref: ordenes_servicio.cliente_id > clientes.id [delete: restrict]
+Ref: ordenes_servicio.equipo_imei_id > equipos_imei.id [delete: set null]
+Ref: ordenes_servicio.garantia_id > garantias.id [delete: set null]
+Ref: ordenes_servicio.tecnico_id > usuarios.id [delete: set null]
+Ref: orden_servicio_repuestos.orden_servicio_id > ordenes_servicio.id [delete: cascade]
+Ref: orden_servicio_repuestos.producto_id > productos.id [delete: restrict]
+Ref: planes.operador_id > operadores.id [delete: restrict]
+Ref: activaciones_linea.plan_id > planes.id [delete: restrict]
+Ref: activaciones_linea.cliente_id > clientes.id [delete: restrict]
+Ref: activaciones_linea.venta_id > ventas.id [delete: set null]
+Ref: dispositivos_iot.caja_id > cajas.id [delete: set null]
+Ref: eventos_iot.dispositivo_id > dispositivos_iot.id [delete: cascade]
+Ref: eventos_iot.equipo_imei_id > equipos_imei.id [delete: set null]
+Ref: alertas.evento_iot_id - eventos_iot.id [delete: set null]
+Ref: alertas.producto_id > productos.id [delete: set null]
+Ref: alertas.atendida_por > usuarios.id [delete: set null]
+
+// ---------------------------------------------------------------------------
+// Modulos
+// ---------------------------------------------------------------------------
+
+TableGroup seguridad {
+  roles
+  permisos
+  rol_permisos
+  usuarios
+  auditoria
+}
+
+TableGroup catalogo {
+  categorias
+  marcas
+  productos
+  promociones
+  promocion_productos
+}
+
+TableGroup compras {
+  proveedores
+  ordenes_compra
+  orden_compra_detalles
+}
+
+TableGroup inventario {
+  equipos_imei
+  movimientos_inventario
+}
+
+TableGroup clientes {
+  clientes
+}
+
+TableGroup ventas {
+  ventas
+  venta_detalles
+  pagos
+  apartados
+}
+
+TableGroup caja {
+  cajas
+  turnos_caja
+  movimientos_caja
+}
+
+TableGroup dian {
+  resoluciones_dian
+  facturas_electronicas
+  notas_credito
+}
+
+TableGroup posventa {
+  devoluciones
+  devolucion_detalles
+  garantias
+  ordenes_servicio
+  orden_servicio_repuestos
+}
+
+TableGroup telefonia {
+  operadores
+  planes
+  activaciones_linea
+}
+
+TableGroup iot {
+  dispositivos_iot
+  eventos_iot
+  alertas
+}

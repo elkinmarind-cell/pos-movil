@@ -1,10 +1,9 @@
 {
-  "name": "POS Movil - Gestion y Venta de Dispositivos Moviles",
+  "name": "POS Movil - Gestion y venta de dispositivos moviles",
   "short_name": "POS Movil",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
-  "description": "Punto de venta con control de inventario por IMEI, garantias y reportes.",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1D4ED8",
   "icons": []
 }

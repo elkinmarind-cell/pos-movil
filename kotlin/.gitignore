@@ -1,0 +1,7 @@
+# Salidas de Gradle y del IDE: se regeneran, no se versionan.
+build/
+.gradle/
+.idea/
+*.iml
+out/
+local.properties

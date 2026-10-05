@@ -1,8 +1,8 @@
-# Rangos minimos, no versiones exactas: asi pip elige la compilacion que
-# corresponda a tu version de Python (probado en 3.10 y resuelto para 3.14).
+# Backend del POS Movil. Rangos minimos para que pip elija lo que sirva en tu Python.
 fastapi>=0.115
 uvicorn>=0.30
 SQLAlchemy>=2.0.36
+psycopg[binary]>=3.2
 pydantic>=2.11
 pydantic-settings>=2.7
 python-jose[cryptography]>=3.3

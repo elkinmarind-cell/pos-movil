@@ -1,3 +1,0 @@
-# Solo hace falta si vas a conectar la API a PostgreSQL en lugar de SQLite.
-# Instalalo aparte:  pip install -r requirements-postgres.txt
-psycopg[binary]>=3.2

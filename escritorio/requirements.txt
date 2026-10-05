@@ -1,0 +1,7 @@
+# Aplicacion de escritorio del POS Movil.
+# Se instalan en el mismo entorno virtual del backend (backend\.venv) para no
+# tener dos entornos que mantener.
+flet>=1.0.3
+requests>=2.32
+# Solo hace falta para generar el ejecutable con 8-CREAR-EJECUTABLE.bat
+pyinstaller>=6.11

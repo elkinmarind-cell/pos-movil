@@ -1,76 +1,58 @@
-"""Punto de entrada de la API del POS de dispositivos moviles."""
-from contextlib import asynccontextmanager
+"""API del Sistema POS para la gestion y venta de dispositivos moviles."""
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from .config import settings
-from .database import Base, engine
-from .routers import auth, clientes, garantias, inventario, productos, reportes, ventas
-
-
-@asynccontextmanager
-async def ciclo_vida(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    yield
-
+from .database import engine
+from .routers import (auth, caja, catalogo, clientes, compras, inventario, iot, posventa,
+                      reportes, telefonia, usuarios, ventas)
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.version,
-    description=(
-        "API del sistema POS para la gestion y venta de dispositivos moviles.\n\n"
-        "Modulos: caja/ventas con IVA, inventario serializado por IMEI, clientes, "
-        "garantias y reportes gerenciales."
-    ),
-    lifespan=ciclo_vida,
+    description=(f"{settings.descripcion}\n\n"
+                 "Modulos: seguridad con roles y permisos, catalogo, inventario serializado por "
+                 "IMEI, compras, clientes, caja con arqueo, ventas con facturacion electronica, "
+                 "apartados, posventa, servicio tecnico, activacion de lineas, IoT y reportes."),
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True,
+                   allow_methods=["*"], allow_headers=["*"])
 
-for modulo in (auth, productos, inventario, clientes, ventas, garantias, reportes):
+for modulo in (auth, usuarios, catalogo, inventario, clientes, compras, caja, ventas,
+               posventa, telefonia, iot, reportes):
     app.include_router(modulo.router)
 
 
-@app.get("/api/salud", tags=["Sistema"], summary="Verificacion de estado")
+@app.get("/api/salud", tags=["Sistema"], summary="Estado del servicio")
 def salud():
-    return {
-        "estado": "ok",
-        "aplicacion": settings.app_name,
-        "version": settings.version,
-        "motor": "PostgreSQL" if settings.es_postgres else "SQLite",
-    }
+    with engine.connect() as cx:
+        version = cx.execute(text("SHOW server_version")).scalar()
+        tablas = cx.execute(text("SELECT COUNT(*) FROM information_schema.tables "
+                                 "WHERE table_schema='public' AND table_type='BASE TABLE'")).scalar()
+    return {"estado": "ok", "aplicacion": settings.app_name, "version": settings.version,
+            "postgresql": version, "tablas": tablas}
 
 
-# --------------------------------------------------------------------------
-# Interfaz compilada
-# --------------------------------------------------------------------------
-# Si existe frontend/dist, el backend la sirve en la raiz. Asi el sistema
-# completo corre con un solo proceso y sin Node instalado. Durante el
-# desarrollo se usa el servidor de Vite (puerto 5173), que tiene recarga
-# automatica; este bloque no estorba en ese caso.
+# La interfaz compilada se sirve desde el mismo proceso cuando existe
 DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+# index.html nunca se cachea: si se guardara, el navegador seguiria pidiendo una
+# version vieja de la interfaz despues de cada compilacion. Los archivos de
+# /assets si se cachean, porque su nombre lleva el hash del contenido.
+SIN_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
 
 if DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
-    @app.get("/manifest.webmanifest", include_in_schema=False)
-    def manifest():
-        return FileResponse(DIST / "manifest.webmanifest")
-
     @app.get("/{ruta_spa:path}", include_in_schema=False)
     def interfaz(ruta_spa: str):
-        """Entrega index.html para que React Router maneje la navegacion."""
         archivo = DIST / ruta_spa
         if ruta_spa and archivo.is_file():
             return FileResponse(archivo)
-        return FileResponse(DIST / "index.html")
+        return FileResponse(DIST / "index.html", headers=SIN_CACHE)

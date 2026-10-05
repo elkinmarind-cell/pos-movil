@@ -1,35 +1,44 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, registrarCierreSesion } from './api.js'
 
-const ContextoAuth = createContext(null)
+const Contexto = createContext(null)
 
 export function ProveedorAuth({ children }) {
-  const [usuario, setUsuario] = useState(null)
+  const [sesion, setSesion] = useState(null)   // { usuario, permisos }
   const [cargando, setCargando] = useState(true)
 
-  const cerrarSesion = () => {
-    localStorage.removeItem('pos_token')
-    setUsuario(null)
-  }
+  const cerrarSesion = useCallback(() => {
+    try { localStorage.removeItem('pos_token') } catch { /* sin almacenamiento */ }
+    setSesion(null)
+  }, [])
 
   useEffect(() => {
     registrarCierreSesion(cerrarSesion)
-    if (!localStorage.getItem('pos_token')) { setCargando(false); return }
-    api.yo().then(setUsuario).catch(cerrarSesion).finally(() => setCargando(false))
-  }, [])
+    let hay = null
+    try { hay = localStorage.getItem('pos_token') } catch { /* sin almacenamiento */ }
+    if (!hay) { setCargando(false); return }
+    api.yo()
+      .then((d) => setSesion({ usuario: d.usuario, permisos: d.permisos }))
+      .catch(cerrarSesion)
+      .finally(() => setCargando(false))
+  }, [cerrarSesion])
 
   const iniciarSesion = async (username, password) => {
-    const datos = await api.login(username, password)
-    localStorage.setItem('pos_token', datos.access_token)
-    setUsuario(datos.usuario)
-    return datos.usuario
+    const d = await api.login(username, password)
+    try { localStorage.setItem('pos_token', d.access_token) } catch { /* sin almacenamiento */ }
+    setSesion({ usuario: d.usuario, permisos: d.permisos })
   }
 
+  const puede = useCallback(
+    (...codigos) => !!sesion && codigos.some((c) => sesion.permisos.includes(c)),
+    [sesion],
+  )
+
   return (
-    <ContextoAuth.Provider value={{ usuario, cargando, iniciarSesion, cerrarSesion }}>
+    <Contexto.Provider value={{ ...sesion, cargando, iniciarSesion, cerrarSesion, puede }}>
       {children}
-    </ContextoAuth.Provider>
+    </Contexto.Provider>
   )
 }
 
-export const useAuth = () => useContext(ContextoAuth)
+export const useAuth = () => useContext(Contexto)
